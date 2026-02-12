@@ -16,6 +16,7 @@ class GapMinder(Node):
 
     top_speed = 1.5
     min_speed = 0.5
+    bubble_radius = 0.2
 
     def __init__(self):
         super().__init__('gap_minder')
@@ -27,18 +28,45 @@ class GapMinder(Node):
         angle = self.get_best_gap(msg)
         self.drive(angle)
 
-    def get_best_gap(self, msg: LaserScan):
-        # TODO
+    def get_best_gap(self, msg: LaserScan) -> float:
+        """Get 2d information on a (assumed) planar surface from a single laser scan.
+
+        Returns
+        -------
+        r : float (meters)
+            Average distance to the surface in the look window
+        theta : float (degrees)
+            Secant angle, countercloskwise from parallel to the car.
+        """
+        ranges = np.array(msg.ranges)
+        angles = np.linspace(msg.angle_min, msg.angle_max, len(msg.ranges))
+        valid = (ranges > msg.range_min) & (ranges < msg.range_max)
+        ranges[~valid] = np.nan
+
+        x = np.cos(angles)
+        y = np.sin(angles)
+
+        nearest = ranges.idxmin()
+        minx, miny = x[nearest], y[nearest]
+        dist = np.sqrt((x - minx)**2 + (y - miny)**2)
+        in_bubble = dist < self.bubble_radius
+        ranges[in_bubble] = np.nan
+
+        # ...
+        # TODO:
+        # ...
+
         return 0  # just go straight forward
 
-    def drive(self, angle: float, speed: float = None):
+    def drive(self, angle: float, speed: float = None) -> None:
         """Drive at the given angle."""
         if speed is None:
             speed = self.appropriate_speed_for(angle)
         drive = AckermannDriveStamped()
         drive.drive.steering_angle = angle
         drive.drive.speed = speed
-        self.drive_pub.publish(drive)
+        self.get_logger().info(f'🏎️ /drive: angle = {angle:5:02f}, speed = {speed:5:02f}')
+        # self.drive_pub.publish(drive)
 
     def get_appropriate_speed_for(angle: float):
         """Choose a safe speed, given the steerign angle."""
