@@ -1,11 +1,12 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
+
   <name>gapminder</name>
-  <version>0.0.0</version>
+  <version>0.1.0</version>
   <description>TODO: Package description</description>
-  <maintainer email="F1-WSU-6@nowhere">f1-wsu-6</maintainer>
-  <license>TODO: License declaration</license>
+  <maintainer email="noah.jackowitz@us.af.mil">Noah Jackowitz</maintainer>
+  <license>MIT</license>
 
   <depend>rclpy</depend>
   <depend>sensor_msgs</depend>
@@ -19,4 +20,5 @@
   <export>
     <build_type>ament_python</build_type>
   </export>
+
 </package>
