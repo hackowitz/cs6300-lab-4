@@ -16,47 +16,58 @@ class GapMinder(Node):
 
     top_speed = 1.5
     min_speed = 0.5
-    bubble_radius = 0.2
 
-    def __init__(self):
+    # attributes of the LaserScan which are assumed during pre-compute
+    # I don't care to handle this changing at runtime
+    angle_min = -2.356194496154785
+    angle_max = 2.356194496154785
+    angle_increment = 0.0043633230961859
+
+    def __init__(
+            self,
+            car_size: float = 0.15,  # meters
+            nsamples: int = None,
+            **kwargs,  # constants about the scan, such as angle_max. etc.
+    ) -> None:
         super().__init__('gap_minder')
+        self.__dict__.update(kwargs)
+        self.car_size = car_size
+        self.nsamples = nsamples or abs(int((self.angle_max + self.angle_min) / self.angle_increment))
+
+        # we save time making arrays/matrices by precomputing static values
+        # 2x2 matrix where [phi0, phi1] == phi - phi1
+        step = np.arange(self.nsamples)
+        self.delta_phi = np.abs(step[:, np.newaxis] - step)
+        self.theta = np.linspace(self.angle_min, self.angle_max, self.nsamples)
+
         self.publisher = self.create_publisher(AckermannDriveStamped, drive_topic, 10)
         self.subscriber = self.create_subscription(LaserScan, '/scan', self.callback, 10)
+
         self.get_logger().info('Initialized %s', self.__class__.__name__)
 
     def callback(self, msg: LaserScan) -> None:
-        angle = self.get_best_gap(msg)
+        angle = self.get_drive_angle(msg)
         self.drive(angle)
 
-    def get_best_gap(self, msg: LaserScan) -> float:
-        """Get 2d information on a (assumed) planar surface from a single laser scan.
+    def get_drive_angle(self, msg: LaserScan):
+        dist = self.get_obstructed_distance(msg)
+        dist_max = np.nanmax(dist)
+        self.get_logger()
+        edge = np.diff((dist == dist_max).astype(int))  # +/-1 entering/exiting max dist region
+        theta_max = (edge.argmin() + edge.argmax() - 1) / 2
+        self.get_logger().debug('Best gap: theta=%5.02f, depth=%5.02f', theta_max, dist_max)
+        return theta_max
 
-        Returns
-        -------
-        r : float (meters)
-            Average distance to the surface in the look window
-        theta : float (degrees)
-            Secant angle, countercloskwise from parallel to the car.
-        """
-        ranges = np.array(msg.ranges)
-        angles = np.linspace(msg.angle_min, msg.angle_max, len(msg.ranges))
-        valid = (ranges > msg.range_min) & (ranges < msg.range_max)
-        ranges[~valid] = np.nan
+    def get_obstructed_distance(self, msg: LaserScan):
+        return np.nanmin(self.get_obstruction_matrix(msg), axis=1)
 
-        x = np.cos(angles)
-        y = np.sin(angles)
+    def get_obstruction_matrix(self, msg: LaserScan):
+        # `nan`s _should_ propogate nicely as long as we use nanmin and nanmax
+        r = np.array(msg.ranges)
+        r[(r < msg.range_min) | (r > msg.range_max)] = np.nan
 
-        nearest = ranges.idxmin()
-        minx, miny = x[nearest], y[nearest]
-        dist = np.sqrt((x - minx)**2 + (y - miny)**2)
-        in_bubble = dist < self.bubble_radius
-        ranges[in_bubble] = np.nan
-
-        # ...
-        # TODO:
-        # ...
-
-        return 0  # just go straight forward
+        phi = np.arcsin(self.car_size / r) / self.angle_increment  # in steps
+        return np.where(self.delta_phi <= phi, r, r[:, np.newaxis])
 
     def drive(self, angle: float, speed: float = None) -> None:
         """Drive at the given angle."""
@@ -65,8 +76,9 @@ class GapMinder(Node):
         drive = AckermannDriveStamped()
         drive.drive.steering_angle = angle
         drive.drive.speed = speed
-        self.get_logger().info(f'🏎️ /drive: angle = {angle:5:02f}, speed = {speed:5:02f}')
-        # self.drive_pub.publish(drive)
+
+        self.get_logger().info('🏎️ /drive: angle = %5.02f, speed = %5.02f', angle, speed)
+        self.drive_pub.publish(drive)
 
     def get_appropriate_speed_for(angle: float):
         """Choose a safe speed, given the steerign angle."""
