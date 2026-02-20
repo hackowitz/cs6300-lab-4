@@ -67,7 +67,7 @@ class GapMinder(Node):
         r[(r < msg.range_min) | (r > msg.range_max)] = np.nan
 
         phi = np.arcsin(self.car_size / r) / self.angle_increment  # in steps
-        return np.where(self.delta_phi <= phi, r, r[:, np.newaxis])
+        return np.where(self.delta_phi <= phi, r, np.nan)
 
     def drive(self, angle: float, speed: float = None) -> None:
         """Drive at the given angle."""
