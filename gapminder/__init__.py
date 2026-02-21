@@ -14,8 +14,9 @@ class GapMinder(Node):
     All angles are radians; the LaserScan measures counderclockwise from straight forward.
     """
 
-    top_speed = 1.5
-    min_speed = 0.5
+    top_speed = 2.5
+    max_accel = 0.25  # empirically derived to go around 0.5m/s@30*, 1m/s@15*, 1.5m/s@7*
+    tti = 1  # desired time to impact, seconds
 
     # attributes of the LaserScan which are assumed during pre-compute
     # I don't care to handle this changing at runtime
@@ -46,17 +47,24 @@ class GapMinder(Node):
         self.get_logger().info('Initialized %s', self.__class__.__name__)
 
     def callback(self, msg: LaserScan) -> None:
-        angle = self.get_drive_angle(msg)
-        self.drive(angle)
+        drive = AckermannDriveStamped()
+        distance, angle = self.get_drive_vector(msg)
+        drive.drive.steering_angle = angle
+        drive.drive.speed = min([
+            distance / self.tti,  # go no faster than time to impact
+            self.top_speed,       # go no faster than top speed
+            (abs(1 / (angle or 0.01)) * self.max_accel)**0.5,  # turn no faster than max_accel
+        ])
+        self.get_logger().info('🏎️ /drive: angle = %5.02f, speed = %5.02f', angle, speed)
+        self.drive_pub.publish(drive)
 
-    def get_drive_angle(self, msg: LaserScan):
+    def get_drive_vector(self, msg: LaserScan):
         dist = self.get_obstructed_distance(msg)
         dist_max = np.nanmax(dist)
-        self.get_logger()
         edge = np.diff((dist == dist_max).astype(int))  # +/-1 entering/exiting max dist region
         theta_max = (edge.argmin() + edge.argmax() - 1) / 2
         self.get_logger().debug('Best gap: theta=%5.02f, depth=%5.02f', theta_max, dist_max)
-        return theta_max
+        return dist, theta_max
 
     def get_obstructed_distance(self, msg: LaserScan):
         return np.nanmin(self.get_obstruction_matrix(msg), axis=1)
@@ -68,27 +76,6 @@ class GapMinder(Node):
 
         phi = np.arcsin(self.car_size / r) / self.angle_increment  # in steps
         return np.where(self.delta_phi <= phi, r, np.nan)
-
-    def drive(self, angle: float, speed: float = None) -> None:
-        """Drive at the given angle."""
-        if speed is None:
-            speed = self.appropriate_speed_for(angle)
-        drive = AckermannDriveStamped()
-        drive.drive.steering_angle = angle
-        drive.drive.speed = speed
-
-        self.get_logger().info('🏎️ /drive: angle = %5.02f, speed = %5.02f', angle, speed)
-        self.drive_pub.publish(drive)
-
-    def get_appropriate_speed_for(angle: float):
-        """Choose a safe speed, given the steerign angle."""
-        theta = abs(np.degrees(angle))
-        if theta < 10:
-            return self.top_speed
-        if theta < 20:
-            # return (self.top_speed - self.min_speed) * (20 - theta) / 10
-            return (self.top_speed - self.min_speed) / 2
-        return self.min_speed
 
 
 def main(args=None):
