@@ -1,3 +1,4 @@
+"""Follow the deepest gap the car can fit through"""
 import rclpy
 from rclpy.node import Node
 
@@ -33,7 +34,8 @@ class GapMinder(Node):
         super().__init__('gap_minder')
         self.__dict__.update(kwargs)
         self.car_size = car_size
-        self.nsamples = nsamples or abs(int((self.angle_max + self.angle_min) / self.angle_increment))
+        self.nsamples = nsamples \
+                or abs(int((self.angle_max + self.angle_min) / self.angle_increment))
 
         # we save time making arrays/matrices by precomputing static values
         # 2x2 matrix where [phi0, phi1] == phi - phi1
@@ -41,35 +43,45 @@ class GapMinder(Node):
         self.delta_phi = np.abs(step[:, np.newaxis] - step)
         self.theta = np.linspace(self.angle_min, self.angle_max, self.nsamples)
 
-        self.publisher = self.create_publisher(AckermannDriveStamped, drive_topic, 10)
+        self.publisher = self.create_publisher(AckermannDriveStamped, '/drive', 10)
         self.subscriber = self.create_subscription(LaserScan, '/scan', self.callback, 10)
 
-        self.get_logger().info('Initialized %s', self.__class__.__name__)
+        self.get_logger().info(f'Initialized {self.__class__.__name__}')
 
     def callback(self, msg: LaserScan) -> None:
+        """Triggered whenever a LaserScan is reccieved."""
         drive = AckermannDriveStamped()
         distance, angle = self.get_drive_vector(msg)
         drive.drive.steering_angle = angle
-        drive.drive.speed = min([
+        drive.drive.speed = speed = min([
             distance / self.tti,  # go no faster than time to impact
             self.top_speed,       # go no faster than top speed
             (abs(1 / (angle or 0.01)) * self.max_accel)**0.5,  # turn no faster than max_accel
         ])
-        self.get_logger().info('🏎️ /drive: angle = %5.02f, speed = %5.02f', angle, speed)
-        self.drive_pub.publish(drive)
+        self.get_logger().info(f'🏎️ /drive: {angle=:5.02f}, {speed=:5.02f}')
+        self.publisher.publish(drive)
 
     def get_drive_vector(self, msg: LaserScan):
-        dist = self.get_obstructed_distance(msg)
-        dist_max = np.nanmax(dist)
-        edge = np.diff((dist == dist_max).astype(int))  # +/-1 entering/exiting max dist region
-        theta_max = (edge.argmin() + edge.argmax() - 1) / 2
-        self.get_logger().debug('Best gap: theta=%5.02f, depth=%5.02f', theta_max, dist_max)
-        return dist, theta_max
+        """Find the distance and angle to the furthest drivable point."""
+        distance = self.get_obstructed_distance(msg)
+        dist = np.nanmax(distance)
+        edge = np.diff((distance == dist).astype(int))  # +/-1 entering/exiting max dist region
+        theta = (edge.argmin() + edge.argmax() - 1) / 2
+        self.get_logger().debug(f'Best gap: {theta=:5.02f}, {dist=:%5.02f}')
+        return dist, theta
 
     def get_obstructed_distance(self, msg: LaserScan):
+        """Get the drivable distance at each angle."""
         return np.nanmin(self.get_obstruction_matrix(msg), axis=1)
 
     def get_obstruction_matrix(self, msg: LaserScan):
+        """Get a matrix of obstrructed ranges (if any) for each angle, by each angle.
+        
+        matrix[i][j] is the range at which the ith angle is obstructed by the object at the jth
+        angle. The matrix is null where the object at j does not obstruct driving towards i.
+
+        The diagonal is how much i obstrusts itself, which is just the range at i.
+        """
         # `nan`s _should_ propogate nicely as long as we use nanmin and nanmax
         r = np.array(msg.ranges)
         r[(r < msg.range_min) | (r > msg.range_max)] = np.nan
@@ -79,6 +91,7 @@ class GapMinder(Node):
 
 
 def main(args=None):
+    """Run the node."""
     rclpy.init(args=args)
     rclpy.spin(node := GapMinder())
     node.destroy_node()
