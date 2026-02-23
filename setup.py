@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 
-package_name = 'gapminder'
+package_name = 'gapfinder'
 
 setup(
     name=package_name,
@@ -20,7 +20,8 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            "gapminder = gapminder:main"
+            "gapfinder = gapfinder:main",
+            "gap_follow = gapfinder:main",
         ],
     },
 )
