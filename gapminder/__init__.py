@@ -15,9 +15,9 @@ class GapMinder(Node):
     All angles are radians; the LaserScan measures counderclockwise from straight forward.
     """
 
-    top_speed = 2.5
+    top_speed = 1.5
     max_accel = 0.25  # empirically derived to go around 0.5m/s@30*, 1m/s@15*, 1.5m/s@7*
-    tti = 1  # desired time to impact, seconds
+    tti = 1.0  # desired time to impact, seconds
 
     # attributes of the LaserScan which are assumed during pre-compute
     # I don't care to handle this changing at runtime
@@ -27,21 +27,21 @@ class GapMinder(Node):
 
     def __init__(
             self,
-            car_size: float = 0.15,  # meters
-            nsamples: int = None,
+            car_size: float = 0.25,  # meters
+            # nsamples: int = None,
             **kwargs,  # constants about the scan, such as angle_max. etc.
     ) -> None:
         super().__init__('gap_minder')
         self.__dict__.update(kwargs)
         self.car_size = car_size
-        self.nsamples = nsamples \
-                or abs(int((self.angle_max + self.angle_min) / self.angle_increment))
+        self.nsamples = 1081 # FIXME, use real math
 
         # we save time making arrays/matrices by precomputing static values
         # 2x2 matrix where [phi0, phi1] == phi - phi1
         step = np.arange(self.nsamples)
         self.delta_phi = np.abs(step[:, np.newaxis] - step)
         self.theta = np.linspace(self.angle_min, self.angle_max, self.nsamples)
+        self.cos = np.cos(self.theta)
 
         self.publisher = self.create_publisher(AckermannDriveStamped, '/drive', 10)
         self.subscriber = self.create_subscription(LaserScan, '/scan', self.callback, 10)
@@ -63,11 +63,14 @@ class GapMinder(Node):
 
     def get_drive_vector(self, msg: LaserScan):
         """Find the distance and angle to the furthest drivable point."""
-        distance = self.get_obstructed_distance(msg)
+        distance = self.get_obstructed_distance(msg) * self.cos
         dist = np.nanmax(distance)
-        edge = np.diff((distance == dist).astype(int))  # +/-1 entering/exiting max dist region
-        theta = (edge.argmin() + edge.argmax() - 1) / 2
-        self.get_logger().debug(f'Best gap: {theta=:5.02f}, {dist=:%5.02f}')
+        # edge = np.diff((distance == dist).astype(int))  # +/-1 entering/exiting max dist region
+        # index = (edge.argmin() - edge.argmax() - 1) // 2
+        index = distance.argmax()
+        # dist = distance[index]
+        theta = self.theta[index]
+        self.get_logger().info(f'Best gap: theta[{index}] = {theta:5.02f}, {dist=:5.02f}')
         return dist, theta
 
     def get_obstructed_distance(self, msg: LaserScan):
