@@ -57,10 +57,17 @@ class GapFinder(Node):
         self.use_front_window = self.get_parameter('use_front_window').value
         self.front_window_degrees = self.get_parameter('front_window_degrees').value
         self.car_size = car_size
+        '''
         self.nsamples = nsamples or abs(
             int((self.angle_max + self.angle_min) / self.angle_increment)
         )
+        '''
 
+        # This avoids nsamples=0 when angle_min and angle_max are symmetric.
+        self.nsamples = nsamples or (
+            int((self.angle_max - self.angle_min) / self.angle_increment) + 1
+        )
+        
         # we save time making arrays/matrices by precomputing static values
         # 2x2 matrix where [phi0, phi1] == phi - phi1
         step = np.arange(self.nsamples)
