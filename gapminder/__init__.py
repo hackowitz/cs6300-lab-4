@@ -1,11 +1,15 @@
 """Follow the deepest gap the car can fit through"""
-import rclpy
-from rclpy.node import Node
 
 import numpy as np
-from sensor_msgs.msg import LaserScan
-from ackermann_msgs.msg import AckermannDriveStamped
 
+try:
+    import rclpy
+    from rclpy.node import Node
+    from sensor_msgs.msg import LaserScan
+    from ackermann_msgs.msg import AckermannDriveStamped
+except ModuleNotFoundError:
+    print('Running in "mock" mode')
+    from .mock import Node, LaserScan, AckermannDriveStamped
 
 
 class GapMinder(Node):
@@ -24,6 +28,10 @@ class GapMinder(Node):
     angle_min = -2.356194496154785
     angle_max = 2.356194496154785
     angle_increment = 0.0043633230961859
+    time_increment = 1.736111516947858e-05
+    scan_time = 0.025000000372529
+    range_min = 0.0199999995529651
+    range_max = 30.0
 
     def __init__(
             self,
@@ -79,7 +87,7 @@ class GapMinder(Node):
 
     def get_obstruction_matrix(self, msg: LaserScan):
         """Get a matrix of obstrructed ranges (if any) for each angle, by each angle.
-        
+
         matrix[i][j] is the range at which the ith angle is obstructed by the object at the jth
         angle. The matrix is null where the object at j does not obstruct driving towards i.
 
