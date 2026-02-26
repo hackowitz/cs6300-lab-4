@@ -4,6 +4,7 @@ The design principle is that each point ($r, \theta$) obstructs some arc ($\thet
 
 $\phi = sin^{-1}(w/r)$
 
-The effective driveable distance in any direction is the minimum range of any point which obstructs that drive angle. We use matrix math in `numpy` to do this quickly and conveniently, taking the minimum range of any relevant obstruction:
+The effective driveable distance in any direction is the minimum range of any point which obstructs that drive angle.
 
-![](./resource/obstruction-map.png)
+
+<iframe src="resource/map2d.html" width="100%" height="500px"></iframe>

@@ -1,5 +1,4 @@
 """Follow the deepest gap the car can fit through"""
-
 import numpy as np
 
 try:
@@ -8,7 +7,6 @@ try:
     from sensor_msgs.msg import LaserScan
     from ackermann_msgs.msg import AckermannDriveStamped
 except ModuleNotFoundError:
-    print('Running in "mock" mode')
     from .mock import Node, LaserScan, AckermannDriveStamped
 
 
@@ -22,32 +20,29 @@ class GapMinder(Node):
     top_speed = 1.5
     max_accel = 0.25  # empirically derived to go around 0.5m/s@30*, 1m/s@15*, 1.5m/s@7*
     tti = 1.0  # desired time to impact, seconds
+    car_width: float = 0.25  # meters
+    car_length: float = 0.30  # meters in front
 
     # attributes of the LaserScan which are assumed during pre-compute
     # I don't care to handle this changing at runtime
     angle_min = -2.356194496154785
     angle_max = 2.356194496154785
     angle_increment = 0.0043633230961859
-    time_increment = 1.736111516947858e-05
-    scan_time = 0.025000000372529
-    range_min = 0.0199999995529651
-    range_max = 30.0
 
     def __init__(
             self,
-            car_size: float = 0.25,  # meters
             # nsamples: int = None,
             **kwargs,  # constants about the scan, such as angle_max. etc.
     ) -> None:
         super().__init__('gap_minder')
         self.__dict__.update(kwargs)
-        self.car_size = car_size
         self.nsamples = 1081 # FIXME, use real math
 
         # we save time making arrays/matrices by precomputing static values
         # 2x2 matrix where [phi0, phi1] == phi - phi1
         step = np.arange(self.nsamples)
         self.delta_phi = np.abs(step[:, np.newaxis] - step)
+        self.pad = np.cos(self.delta_phi * self.angle_increment) * self.car_width
         self.theta = np.linspace(self.angle_min, self.angle_max, self.nsamples)
         self.cos = np.cos(self.theta)
 
@@ -73,9 +68,9 @@ class GapMinder(Node):
         """Find the distance and angle to the furthest drivable point."""
         distance = self.get_obstructed_distance(msg) * self.cos
         dist = np.nanmax(distance)
-        # edge = np.diff((distance == dist).astype(int))  # +/-1 entering/exiting max dist region
-        # index = (edge.argmin() - edge.argmax() - 1) // 2
-        index = distance.argmax()
+        edge = np.diff((distance == dist).astype(int))  # +/-1 entering/exiting max dist region
+        index = (edge.argmin() + edge.argmax() - 1) // 2
+        # index = distance.argmax()
         # dist = distance[index]
         theta = self.theta[index]
         self.get_logger().info(f'Best gap: theta[{index}] = {theta:5.02f}, {dist=:5.02f}')
@@ -97,8 +92,8 @@ class GapMinder(Node):
         r = np.array(msg.ranges)
         r[(r < msg.range_min) | (r > msg.range_max)] = np.nan
 
-        phi = np.arcsin(self.car_size / r) / self.angle_increment  # in steps
-        return np.where(self.delta_phi <= phi, r, np.nan)
+        phi = np.arcsin(self.car_width / r) / self.angle_increment  # in steps
+        return np.where(self.delta_phi <= phi, r, np.nan) - self.pad
 
 
 def main(args=None):
